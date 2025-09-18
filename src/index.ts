@@ -10,12 +10,14 @@ import { createQueue, setupQueueProcessor } from './queue';
 
 interface AddJobQueryString {
   id: string;
-  email: string;
+  targetUrl: string;
+  runAt: string;
+  method?: string;
 }
 
 const run = async () => {
-  const welcomeEmailQueue = createQueue('WelcomeEmailQueue');
-  await setupQueueProcessor(welcomeEmailQueue.name);
+  const scheduledHttpQueue = createQueue('ScheduledHttpQueue');
+  await setupQueueProcessor(scheduledHttpQueue.name);
 
   const server: FastifyInstance<Server, IncomingMessage, ServerResponse> =
     fastify();
@@ -24,7 +26,7 @@ const run = async () => {
   createBullBoard({
     queues: [
       // Cast required while bull-board updates its types for BullMQ v5.
-      new BullMQAdapter(welcomeEmailQueue) as unknown as BaseAdapter,
+      new BullMQAdapter(scheduledHttpQueue) as unknown as BaseAdapter,
     ],
     serverAdapter,
   });
@@ -41,37 +43,96 @@ const run = async () => {
         querystring: {
           type: 'object',
           properties: {
-            title: { type: 'string' },
             id: { type: 'string' },
+            targetUrl: { type: 'string', format: 'uri' },
+            runAt: { type: 'string' },
+            method: { type: 'string' },
           },
+          required: ['id', 'targetUrl', 'runAt'],
         },
       },
     },
     (req: FastifyRequest<{ Querystring: AddJobQueryString }>, reply) => {
-      if (
-        req.query == null ||
-        req.query.email == null ||
-        req.query.id == null
-      ) {
-        reply
-          .status(400)
-          .send({ error: 'Requests must contain both an id and a email' });
+      if (req.query == null) {
+        reply.code(400).send({ error: 'Missing query parameters' });
 
         return;
       }
 
-      const { email, id } = req.query;
-      welcomeEmailQueue.add(`WelcomeEmail-${id}`, { email });
+      const { id, targetUrl, runAt } = req.query;
+      const method = (req.query.method ?? 'GET').toUpperCase();
+
+      if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+        reply.code(400).send({ error: `Unsupported HTTP method ${method}` });
+
+        return;
+      }
+
+      let runAtDate: Date | null = null;
+
+      if (/^\d{2}:\d{2}$/.test(runAt)) {
+        const [hoursStr, minutesStr] = runAt.split(':');
+        const hours = Number.parseInt(hoursStr, 10);
+        const minutes = Number.parseInt(minutesStr, 10);
+
+        if (
+          Number.isNaN(hours) ||
+          Number.isNaN(minutes) ||
+          hours < 0 ||
+          hours > 23 ||
+          minutes < 0 ||
+          minutes > 59
+        ) {
+          reply.code(400).send({ error: 'runAt must be a valid HH:mm time string' });
+
+          return;
+        }
+
+        runAtDate = new Date();
+        runAtDate.setSeconds(0, 0);
+        runAtDate.setHours(hours, minutes, 0, 0);
+
+        if (runAtDate.getTime() <= Date.now()) {
+          runAtDate.setDate(runAtDate.getDate() + 1);
+        }
+      } else {
+        const parsedDate = new Date(runAt);
+        if (!Number.isNaN(parsedDate.getTime())) runAtDate = parsedDate;
+      }
+
+      if (runAtDate == null) {
+        reply.code(400).send({ error: 'runAt must be either HH:mm or an ISO8601 date string' });
+
+        return;
+      }
+
+      const delay = runAtDate.getTime() - Date.now();
+
+      if (delay <= 0) {
+        reply.code(400).send({ error: 'runAt must be in the future' });
+
+        return;
+      }
+
+      scheduledHttpQueue.add(
+        `HttpCall-${id}`,
+        { targetUrl, method },
+        {
+          delay,
+          removeOnComplete: true,
+        }
+      );
 
       reply.send({
         ok: true,
+        scheduledFor: runAtDate.toISOString(),
       });
     }
   );
 
   await server.listen({ port: env.PORT, host: '0.0.0.0' });
   console.log(
-    `To populate the queue and demo the UI, run: curl https://${env.RAILWAY_STATIC_URL}/add-job?id=1&email=hello%40world.com`
+    `To schedule a job, run: curl "https://${env.RAILWAY_STATIC_URL}/add-job?id=1&targetUrl=https%3A%2F%2Fexample.com&runAt=17:34"`
   );
 };
 
