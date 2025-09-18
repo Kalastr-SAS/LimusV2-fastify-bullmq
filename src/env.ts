@@ -5,6 +5,7 @@ export const env = envsafe({
   REDISPORT: port(),
   REDISUSER: str(),
   REDISPASSWORD: str(),
+  JWT_CRON: str(),
   PORT: port({
     devDefault: 3000,
   }),

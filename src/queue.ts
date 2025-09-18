@@ -31,6 +31,10 @@ const performHttpCall = async ({ targetUrl, method }: ScheduledHttpJobData) =>
         hostname: url.hostname,
         path: `${url.pathname}${url.search}`,
         port: url.port || (isHttps ? 443 : 80),
+        headers: {
+          Authorization: `Bearer ${env.JWT_CRON}`,
+          'User-Agent': 'limus-queue-runner/1.0',
+        },
       },
       (response) => {
         response.setEncoding('utf8');
