@@ -11,6 +11,7 @@
     "src"
   ],
   "scripts": {
+    "prestart": "yarn run build",
     "build": "tsc --build",
     "lint": "dts lint",
     "watch": "tsc --build --watch",
