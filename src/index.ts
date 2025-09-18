@@ -2,7 +2,7 @@ import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
 import { BaseAdapter } from '@bull-board/api/dist/src/queueAdapters/base';
 import { FastifyAdapter } from '@bull-board/fastify';
-import fastify, { FastifyInstance, FastifyRequest } from 'fastify';
+import fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { Server, IncomingMessage, ServerResponse } from 'http';
 import { env } from './env';
 
@@ -13,6 +13,10 @@ interface AddJobQueryString {
   targetUrl: string;
   runAt: string;
   method?: string;
+}
+
+interface DeleteJobQueryString {
+  id: string;
 }
 
 const run = async () => {
@@ -36,9 +40,26 @@ const run = async () => {
     basePath: '/',
   });
 
+  // Simple API key guard for protected endpoints
+  const requireApiKey = async (
+    req: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<void> => {
+    const headerApiKey = (req.headers['x-api-key'] as string | undefined) ??
+      (typeof req.headers.authorization === 'string' && req.headers.authorization.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7)
+        : undefined);
+
+    if (!headerApiKey || headerApiKey !== env.API_KEY_SCHEDULER) {
+      reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
+  };
+
   server.get(
     '/add-job',
     {
+      preHandler: requireApiKey,
       schema: {
         querystring: {
           type: 'object',
@@ -127,6 +148,63 @@ const run = async () => {
         ok: true,
         scheduledFor: runAtDate.toISOString(),
       });
+    }
+  );
+
+  // Remove a scheduled job by id (matches the id used in the job name)
+  server.get(
+    '/delete-job',
+    {
+      preHandler: requireApiKey,
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+          },
+          required: ['id'],
+        },
+      },
+    },
+    async (req: FastifyRequest<{ Querystring: DeleteJobQueryString }>, reply) => {
+      if (req.query == null) {
+        reply.code(400).send({ error: 'Missing query parameters' });
+        return;
+      }
+
+      const { id } = req.query;
+      const jobName = `HttpCall-${id}`;
+
+      const jobTypes = [
+        'delayed',
+        'waiting',
+        'paused',
+        'prioritized',
+        'waiting-children',
+      ] as const;
+
+      const jobs = await scheduledHttpQueue.getJobs(jobTypes as any, 0, -1, true);
+      const matches = jobs.filter((j) => j.name === jobName);
+
+      let removed = 0;
+      let failed = 0;
+
+      for (const job of matches) {
+        try {
+          // Note: active jobs cannot be removed; this may throw.
+          await job.remove();
+          removed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      if (removed === 0 && failed === 0) {
+        reply.code(404).send({ ok: false, message: 'No matching job found' });
+        return;
+      }
+
+      reply.send({ ok: true, removed, failed });
     }
   );
 

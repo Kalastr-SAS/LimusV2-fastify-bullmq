@@ -8,32 +8,34 @@
 - A dashboard built with `bull-board`
 - A Fastify server to trigger jobs via an `/add-job` API endpoint
 - Outgoing requests include an `Authorization: Bearer <JWT>` header
+- Protected endpoints with an API key (via `x-api-key` or `Authorization: Bearer`)
 
 ## API: Schedule an HTTP Call
 
-`GET /add-job`
+`GET /add-job` (requires API key)
 
 Schedule a single HTTP request that the worker will execute at a specific time. Parameters are provided via the query string.
 
-| Query | Required | Description |
-| --- | --- | --- |
-| `id` | yes | Identifier used in the job name (`HttpCall-{id}`). |
-| `targetUrl` | yes | Fully qualified URL to call (supports `http` and `https`). |
-| `runAt` | yes | Either `HH:mm` (24h) to run at the next occurrence of that time, or an ISO 8601 datetime string. |
-| `method` | no | HTTP verb to use when calling `targetUrl`. Defaults to `GET`; accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. |
+| Query       | Required | Description                                                                                                    |
+| ----------- | -------- | -------------------------------------------------------------------------------------------------------------- |
+| `id`        | yes      | Identifier used in the job name (`HttpCall-{id}`).                                                             |
+| `targetUrl` | yes      | Fully qualified URL to call (supports `http` and `https`).                                                     |
+| `runAt`     | yes      | Either `HH:mm` (24h) to run at the next occurrence of that time, or an ISO 8601 datetime string.               |
+| `method`    | no       | HTTP verb to use when calling `targetUrl`. Defaults to `GET`; accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`. |
 
 ### Example: call at 17:34 today
 
 ```bash
 yarn start &
 # Wait for the server to be ready, then:
-curl "http://localhost:${PORT}/add-job?id=signup-1734&targetUrl=http://localhost:3000/user/audience/send-signup-emails&runAt=17:34&method=POST"
+curl -H "x-api-key: ${API_KEY_SCHEDULER}" \
+  "http://localhost:${PORT}/add-job?id=signup-1734&targetUrl=http://localhost:3000/user/audience/send-signup-emails&runAt=17:34&method=POST"
 ```
 
 The response confirms the scheduled timestamp:
 
 ```json
-{"ok": true, "scheduledFor": "2024-05-02T15:34:00.000Z"}
+{ "ok": true, "scheduledFor": "2024-05-02T15:34:00.000Z" }
 ```
 
 ### Worker behaviour
@@ -60,6 +62,37 @@ yarn start
 
 Once the server is running, execute the `curl` example above and observe the job in the Bull Board UI.
 
+## API: Delete a Scheduled Job
+
+`GET /delete-job` (requires API key)
+
+Removes a scheduled job created via `/add-job` using the same `id` (matches on job name `HttpCall-{id}`). If multiple matching jobs exist, all are attempted; active jobs may not be removable.
+
+| Query | Required | Description                                          |
+| ----- | -------- | ---------------------------------------------------- |
+| `id`  | yes      | The same id used when creating the job (`/add-job`). |
+
+Example:
+
+```bash
+curl -H "x-api-key: ${API_KEY_SCHEDULER}" \
+  "http://localhost:${PORT}/delete-job?id=signup-1734"
+```
+
+## API Security: API Key
+
+All write endpoints are protected by an API key. Provide it using either header:
+
+- `x-api-key: <API_KEY_SCHEDULER>`
+- `Authorization: Bearer <API_KEY_SCHEDULER>`
+
+Configuration:
+
+- Set `API_KEY_SCHEDULER` in your environment.
+- Requests missing or with a wrong key receive `401 Unauthorized`.
+
+Note: The Bull Board UI (served at `/`) is not protected by this key by default.
+
 ## Environment variables
 
 Set the following variables (e.g. in a `.env` used by your process manager):
@@ -71,3 +104,4 @@ Set the following variables (e.g. in a `.env` used by your process manager):
 - `PORT` — HTTP port for the Fastify server (default 3000 in dev)
 - `RAILWAY_STATIC_URL` — Public URL for UI hints (default http://localhost:3000 in dev)
 - `JWT_CRON` — JWT secret that will be sent as `Authorization: Bearer <JWT_CRON>` on all scheduled HTTP requests
+- `API_KEY_SCHEDULER` — Shared secret required to call `/add-job` and `/delete-job`

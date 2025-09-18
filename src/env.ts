@@ -6,6 +6,7 @@ export const env = envsafe({
   REDISUSER: str(),
   REDISPASSWORD: str(),
   JWT_CRON: str(),
+  API_KEY_SCHEDULER: str(),
   PORT: port({
     devDefault: 3000,
   }),
