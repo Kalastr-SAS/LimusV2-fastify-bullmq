@@ -7,6 +7,8 @@ export const env = envsafe({
   REDISPASSWORD: str(),
   JWT_CRON: str(),
   API_KEY_SCHEDULER: str(),
+  DASHBOARD_USER: str(),
+  DASHBOARD_PASSWORD: str(),
   PORT: port({
     devDefault: 3000,
   }),

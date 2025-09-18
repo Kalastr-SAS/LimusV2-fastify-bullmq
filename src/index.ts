@@ -35,10 +35,48 @@ const run = async () => {
     serverAdapter,
   });
   serverAdapter.setBasePath('/');
-  server.register(serverAdapter.registerPlugin(), {
-    prefix: '/',
-    basePath: '/',
-  });
+
+  // Basic Auth for Bull Board dashboard
+  const requireDashboardAuth = async (
+    req: FastifyRequest,
+    reply: FastifyReply
+  ): Promise<void> => {
+    const auth = req.headers.authorization;
+    if (!auth || !auth.startsWith('Basic ')) {
+      reply.header('WWW-Authenticate', 'Basic realm="Bull Board", charset="UTF-8"');
+      reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
+
+    try {
+      const decoded = Buffer.from(auth.slice(6), 'base64').toString('utf8');
+      const sep = decoded.indexOf(':');
+      const user = sep >= 0 ? decoded.slice(0, sep) : '';
+      const pass = sep >= 0 ? decoded.slice(sep + 1) : '';
+
+      if (user !== env.DASHBOARD_USER || pass !== env.DASHBOARD_PASSWORD) {
+        reply.header('WWW-Authenticate', 'Basic realm="Bull Board", charset="UTF-8"');
+        reply.code(401).send({ error: 'Unauthorized' });
+        return;
+      }
+    } catch {
+      reply.header('WWW-Authenticate', 'Basic realm="Bull Board", charset="UTF-8"');
+      reply.code(401).send({ error: 'Unauthorized' });
+      return;
+    }
+  };
+
+  // Register Bull Board behind the Basic Auth guard (scoped plugin)
+  server.register(
+    async (instance) => {
+      instance.addHook('onRequest', requireDashboardAuth);
+      instance.register(serverAdapter.registerPlugin(), {
+        prefix: '/',
+        basePath: '/',
+      });
+    },
+    { prefix: '/' }
+  );
 
   // Simple API key guard for protected endpoints
   const requireApiKey = async (

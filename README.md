@@ -91,7 +91,7 @@ Configuration:
 - Set `API_KEY_SCHEDULER` in your environment.
 - Requests missing or with a wrong key receive `401 Unauthorized`.
 
-Note: The Bull Board UI (served at `/`) is not protected by this key by default.
+Note: The Bull Board UI (served at `/`) is protected by HTTP Basic Auth.
 
 ## Environment variables
 
@@ -105,3 +105,5 @@ Set the following variables (e.g. in a `.env` used by your process manager):
 - `RAILWAY_STATIC_URL` — Public URL for UI hints (default http://localhost:3000 in dev)
 - `JWT_CRON` — JWT secret that will be sent as `Authorization: Bearer <JWT_CRON>` on all scheduled HTTP requests
 - `API_KEY_SCHEDULER` — Shared secret required to call `/add-job` and `/delete-job`
+- `DASHBOARD_USER` — Username for Basic Auth protecting the dashboard
+- `DASHBOARD_PASSWORD` — Password for Basic Auth protecting the dashboard
