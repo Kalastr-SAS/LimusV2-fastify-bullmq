@@ -1,5 +1,6 @@
 import { createBullBoard } from '@bull-board/api';
 import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { BaseAdapter } from '@bull-board/api/dist/src/queueAdapters/base';
 import { FastifyAdapter } from '@bull-board/fastify';
 import fastify, { FastifyInstance, FastifyRequest } from 'fastify';
 import { Server, IncomingMessage, ServerResponse } from 'http';
@@ -21,7 +22,10 @@ const run = async () => {
 
   const serverAdapter = new FastifyAdapter();
   createBullBoard({
-    queues: [new BullMQAdapter(welcomeEmailQueue)],
+    queues: [
+      // Cast required while bull-board updates its types for BullMQ v5.
+      new BullMQAdapter(welcomeEmailQueue) as unknown as BaseAdapter,
+    ],
     serverAdapter,
   });
   serverAdapter.setBasePath('/');
